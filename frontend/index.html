@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeepSeek with Ollama</title>
+    <style>
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .chat-container {
+            flex-grow: 1;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 8px;
+            max-width: 80%;
+        }
+        .user-message {
+            background-color: #e3f2fd;
+            margin-left: auto;
+        }
+        .assistant-message {
+            background-color: #f0f0f0;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+        textarea {
+            flex-grow: 1;
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            font-size: 16px;
+            resize: none;
+            height: 80px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover { background-color: #0b7dda; }
+        button:disabled { background-color: #cccccc; }
+        
+        .status {
+            text-align: center;
+            font-style: italic;
+            color: #666;
+            margin-bottom: 10px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        pre code {
+            display: block;
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>DeepSeek with Ollama</h1>
+            <p>Local trial version</p>
+        </header>
+        
+        <div class="chat-container" id="chat-container"></div>
+        
+        <div class="status" id="status">Model ready</div>
+        
+        <div class="input-container">
+            <textarea id="user-input" placeholder="Type your message here..." autofocus></textarea>
+            <button id="send-button">Send</button>
+        </div>
+        
+        <div class="controls">
+            <button id="clear-chat">Clear Chat</button>
+            <button id="test-connection">Test Connection</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const chatContainer = document.getElementById('chat-container');
+            const userInput = document.getElementById('user-input');
+            const sendButton = document.getElementById('send-button');
+            const statusElement = document.getElementById('status');
+            const clearChatButton = document.getElementById('clear-chat');
+            const testConnectionButton = document.getElementById('test-connection');
+            
+            // API endpoints
+            const API_URL = '/api';
+            
+            // Store conversation history
+            const conversationHistory = [];
+            
+            // Check if backend is running
+            fetch(`${API_URL}/health`)
+                .then(response => response.json())
+                .then(data => {
+                    statusElement.textContent = 'Backend connected, model ready';
+                })
+                .catch(error => {
+                    statusElement.textContent = 'Error connecting to backend. Make sure the server is running.';
+                    statusElement.style.color = 'red';
+                });
+            
+            // Test connection
+            testConnectionButton.addEventListener('click', async function() {
+                statusElement.textContent = 'Testing connection...';
+                try {
+                    const response = await fetch(`${API_URL}/health`);
+                    const data = await response.json();
+                    if (data.status === 'ok') {
+                        statusElement.textContent = 'Connection successful!';
+                        statusElement.style.color = 'green';
+                        setTimeout(() => {
+                            statusElement.textContent = 'Model ready';
+                            statusElement.style.color = '#666';
+                        }, 2000);
+                    }
+                } catch (error) {
+                    statusElement.textContent = 'Connection failed. Check server.';
+                    statusElement.style.color = 'red';
+                }
+            });
+            
+            // Clear chat
+            clearChatButton.addEventListener('click', function() {
+                chatContainer.innerHTML = '';
+                conversationHistory.length = 0;
+            });
+            
+            // Send message when button is clicked
+            sendButton.addEventListener('click', sendMessage);
+            
+            // Send message when Enter is pressed (without Shift)
+            userInput.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendMessage();
+                }
+            });
+            
+            function sendMessage() {
+                const message = userInput.value.trim();
+                if (!message) return;
+                
+                // Disable input while processing
+                userInput.disabled = true;
+                sendButton.disabled = true;
+                statusElement.textContent = 'DeepSeek is thinking...';
+                
+                // Add user message to chat
+                addMessageToChat('user', message);
+                
+                // Update conversation history
+                conversationHistory.push({
+                    role: 'user',
+                    content: message
+                });
+                
+                // Clear input
+                userInput.value = '';
+                
+                // Send to API
+                fetch(`${API_URL}/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        messages: conversationHistory,
+                        model: 'deepseek-r1:8b',
+                        options: {
+                            temperature: 0.7
+                        }
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error ${response.status}`);
+                    }
+                    return response.text(); // Get the raw text response
+                })
+                .then(text => {
+                    // Process the streamed JSON responses
+                    let fullContent = '';
+                    try {
+                        // The response is a series of JSON objects separated by newlines
+                        const jsonLines = text.trim().split('\n');
+                        
+                        // Process each line
+                        for (const line of jsonLines) {
+                            try {
+                                const jsonResponse = JSON.parse(line);
+                                if (jsonResponse.message && jsonResponse.message.content) {
+                                    // Skip the thinking tags
+                                    if (jsonResponse.message.content === '<think>' || 
+                                        jsonResponse.message.content === '</think>') {
+                                        continue;
+                                    }
+                                    fullContent += jsonResponse.message.content;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing JSON line:', e);
+                                // Continue processing other lines
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error processing response:', e);
+                        fullContent = 'Sorry, I encountered an error processing the response.';
+                    }
+                    
+                    // If we didn't get any content, provide an error message
+                    if (!fullContent) {
+                        fullContent = 'Sorry, I couldn\'t parse the model\'s response.';
+                    }
+                    
+                    // Add assistant message to chat
+                    addMessageToChat('assistant', fullContent);
+                    
+                    // Update conversation history
+                    conversationHistory.push({
+                        role: 'assistant',
+                        content: fullContent
+                    });
+                    
+                    // Re-enable input
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                    statusElement.textContent = 'Model ready';
+                    
+                    // Focus input for next message
+                    userInput.focus();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    addMessageToChat('assistant', `Error: ${error.message}`);
+                    
+                    statusElement.textContent = 'Error communicating with DeepSeek. Please try again.';
+                    statusElement.style.color = 'red';
+                    
+                    // Re-enable input
+                    userInput.disabled = false;
+                    sendButton.disabled = false;
+                });
+            }
+            
+            function addMessageToChat(role, content) {
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('message');
+                messageElement.classList.add(role === 'user' ? 'user-message' : 'assistant-message');
+                
+                // Process markdown-style code blocks
+                let formattedContent = content;
+                
+                // Replace code blocks with proper HTML
+                formattedContent = formattedContent.replace(/```([\s\S]*?)```/g, function(match, code) {
+                    return `<pre><code>${code}</code></pre>`;
+                });
+                
+                // Process math notation
+                formattedContent = formattedContent.replace(/\\\[([\s\S]*?)\\\]/g, function(match, math) {
+                    return `<div class="math-block">${math}</div>`;
+                });
+                
+                formattedContent = formattedContent.replace(/\\\(([\s\S]*?)\\\)/g, function(match, math) {
+                    return `<span class="math-inline">${math}</span>`;
+                });
+                
+                // Process markdown-style bold and italics
+                formattedContent = formattedContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                formattedContent = formattedContent.replace(/\*(.*?)\*/g, '<em>$1</em>');
+                
+                // Replace newlines with <br> tags (except within code blocks)
+                formattedContent = formattedContent.replace(/\n/g, '<br>');
+                
+                messageElement.innerHTML = formattedContent;
+                chatContainer.appendChild(messageElement);
+                
+                // Scroll to bottom
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+        });
+    </script>
+</body>
+</html>

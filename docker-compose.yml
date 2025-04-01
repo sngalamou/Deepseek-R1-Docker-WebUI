@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+  # Ollama service for running the DeepSeek model
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # Remove the GPU configuration
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Backend service (Node.js Express server)
+  backend:
+    build: ./backend
+    container_name: deepseek-backend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+    restart: unless-stopped
+
+  # Frontend service (serving the HTML)
+  frontend:
+    build: ./frontend
+    container_name: deepseek-frontend
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
